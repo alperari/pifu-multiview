@@ -1,7 +1,7 @@
 {
   "dataroot": "./data",
   "loadSize": 512,
-  "name": "pifu_demo/rp_Man",
+  "name": "pifu_demo_2/rp_Man",
   "debug": false,
   "num_views": 4,
   "random_multiview": false,

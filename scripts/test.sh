@@ -4,7 +4,7 @@ set -ex
 # Training
 GPU_ID=0
 DISPLAY_ID=$((GPU_ID*10+10))
-NAME='pifu_demo/rp_Man'
+NAME='pifu_demo_2/rp_Man'
 
 # Network configuration
 
