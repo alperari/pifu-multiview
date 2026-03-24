@@ -1,3 +1,4 @@
+from skimage import measure
 import numpy as np
 import torch
 from .sdf import create_grid, eval_grid_octree, eval_grid
@@ -39,21 +40,17 @@ def reconstruction(net, cuda, calib_tensor,
     else:
         sdf = eval_grid(coords, eval_func, num_samples=num_samples)
 
-    # Finally we do marching cubes (support both old/new skimage APIs)
-    marching_cubes_fn = getattr(measure, 'marching_cubes', None)
-    if marching_cubes_fn is None:
-        marching_cubes_fn = getattr(measure, 'marching_cubes_lewiner')
-
+    # Finally we do marching cubes
     try:
-        verts, faces, normals, values = marching_cubes_fn(sdf, level=0.5)
-    except Exception as e:
+        verts, faces, normals, values = measure.marching_cubes_lewiner(
+            sdf, 0.5)
+        # transform verts into world coordinate system
+        verts = np.matmul(mat[:3, :3], verts.T) + mat[:3, 3:4]
+        verts = verts.T
+        return verts, faces, normals, values
+    except:
         print('error cannot marching cubes')
-        raise RuntimeError('Marching cubes failed: {0}'.format(e))
-
-    # transform verts into world coordinate system
-    verts = np.matmul(mat[:3, :3], verts.T) + mat[:3, 3:4]
-    verts = verts.T
-    return verts, faces, normals, values
+        return -1
 
 
 def save_obj_mesh(mesh_path, verts, faces):
@@ -72,7 +69,8 @@ def save_obj_mesh_with_color(mesh_path, verts, faces, colors):
 
     for idx, v in enumerate(verts):
         c = colors[idx]
-        file.write('v %.4f %.4f %.4f %.4f %.4f %.4f\n' % (v[0], v[1], v[2], c[0], c[1], c[2]))
+        file.write('v %.4f %.4f %.4f %.4f %.4f %.4f\n' %
+                   (v[0], v[1], v[2], c[0], c[1], c[2]))
     for f in faces:
         f_plus = f + 1
         file.write('f %d %d %d\n' % (f_plus[0], f_plus[2], f_plus[1]))

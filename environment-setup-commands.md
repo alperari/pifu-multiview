@@ -13,5 +13,14 @@ conda install -c menpo opencv -y
 conda install matplotlib -y
 conda install numpy -y
 
+
+### Make sure you install
+```
+numpy 1.26.4
+scipy 1.11.4
+scikit-image 0.18.3
+```
+pip install --force-reinstall --no-cache-dir "numpy==1.26.4" "scipy==1.11.4" "scikit-image==0.18.3
+
 ### Run the test script
 sh ./scripts/test.sh
