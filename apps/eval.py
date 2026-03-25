@@ -26,12 +26,13 @@ import tqdm
 # get options
 opt = BaseOptions().parse()
 
+
 class Evaluator:
     def __init__(self, opt, projection_mode='orthogonal'):
         self.opt = opt
         self.load_size = self.opt.loadSize
         self.to_tensor = transforms.Compose([
-            transforms.Resize(self.load_size),
+            transforms.Resize((self.load_size, self.load_size)),
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
@@ -62,7 +63,25 @@ class Evaluator:
         self.cuda = cuda
         self.netG = netG
         self.netC = netC
-    
+
+    def _yaw_extrinsic(self, image_path):
+        # Filenames follow <yaw>_0_00.* in this repo; if parsing fails, assume front view (0 deg).
+        basename = os.path.splitext(os.path.basename(image_path))[0]
+        try:
+            yaw_deg = float(basename.split('_')[0])
+        except Exception:
+            yaw_deg = 0.0
+
+        rad = np.deg2rad(yaw_deg)
+        c = np.cos(rad)
+        s = np.sin(rad)
+        return np.array([
+            [c, 0, s, 0],
+            [0, 1, 0, 0],
+            [-s, 0, c, 0],
+            [0, 0, 0, 1],
+        ])
+
     def load_image(self, images, masks):
         # Name
         img_name = os.path.splitext(os.path.basename(images[0]))[0]
@@ -71,56 +90,19 @@ class Evaluator:
         B_MAX = np.array([1, 1, 1])
         projection_matrix = np.identity(4)
         projection_matrix[1, 1] = -1
-        
-        # modify: multi-view setting
+
         calibList = []
-        if self.opt.num_views == 1:
-            calibList.append(torch.Tensor(projection_matrix).float())
-        elif self.opt.num_views == 3:
-            extrin_60 = np.array([
-                [-0.5, 0, 0.866, 0], 
-                [0, 1, 0, 0],
-                [-0.866, 0, -0.5, 0], 
-                [0, 0, 0, 1]
-            ])
-            extrin_120 = np.array([
-                [-0.5, 0, -0.866, 0], 
-                [0, 1, 0, 0],
-                [0.866, 0, -0.5, 0], 
-                [0, 0, 0, 1]
-            ])
-            calibList.append(torch.Tensor(projection_matrix).float())
-            calibList.append(torch.Tensor(np.matmul(projection_matrix, extrin_60)).float())
-            calibList.append(torch.Tensor(np.matmul(projection_matrix, extrin_120)).float())
-        elif self.opt.num_views == 4:
-            extrin_90 = np.array([
-                [0, 0, 1, 0], 
-                [0, 1, 0, 0],
-                [-1, 0, 0, 0], 
-                [0, 0, 0, 1]
-            ])
-            extrin_180 = np.array([
-                [-1, 0, 0, 0], 
-                [0, 1, 0, 0],
-                [0, 0, -1, 0], 
-                [0, 0, 0, 1]
-            ])
-            extrin_270 = np.array([
-                [0, 0, -1, 0], 
-                [0, 1, 0, 0],
-                [1, 0, 0, 0], 
-                [0, 0, 0, 1]
-            ])
-            calibList.append(torch.Tensor(projection_matrix).float())
-            calibList.append(torch.Tensor(np.matmul(projection_matrix, extrin_90)).float())
-            calibList.append(torch.Tensor(np.matmul(projection_matrix, extrin_180)).float())
-            calibList.append(torch.Tensor(np.matmul(projection_matrix, extrin_270)).float())
+        for image_path in images:
+            extrinsic = self._yaw_extrinsic(image_path)
+            calib = np.matmul(projection_matrix, extrinsic)
+            calibList.append(torch.Tensor(calib).float())
+
         # Mask
         maskList = []
         imageList = []
         for mask, image in zip(masks, images):
             mask = Image.open(mask).convert('L')
-            mask = transforms.Resize(self.load_size)(mask)
+            mask = transforms.Resize((self.load_size, self.load_size))(mask)
             mask = transforms.ToTensor()(mask).float()
             maskList.append(mask)
             image = Image.open(image).convert('RGB')
@@ -135,7 +117,6 @@ class Evaluator:
             'b_min': B_MIN,
             'b_max': B_MAX,
         }
-        #--------------------------------------#
 
     def eval(self, data, use_octree=False):
         '''
@@ -155,22 +136,55 @@ class Evaluator:
                 gen_mesh(opt, self.netG, self.cuda, data, save_path, use_octree=use_octree)
 
 
+def _angle_from_name(path):
+    basename = os.path.splitext(os.path.basename(path))[0]
+    try:
+        return float(basename.split('_')[0])
+    except Exception:
+        return 1e9
+
+
+def _collect_test_pairs(test_folder_path):
+    img_exts = ('*.jpg', '*.jpeg', '*.png')
+    images = []
+    for ext in img_exts:
+        images.extend(glob.glob(os.path.join(test_folder_path, ext)))
+    images = [p for p in images if '_mask' not in os.path.basename(p)]
+    images = sorted(images, key=lambda p: (_angle_from_name(p), p))
+
+    test_images = []
+    test_masks = []
+    for image_path in images:
+        base, _ = os.path.splitext(image_path)
+        mask_candidates = [
+            base + '_mask.png',
+            base + '.png',
+        ]
+        mask_path = next((m for m in mask_candidates if os.path.exists(m)), None)
+        if mask_path is not None:
+            test_images.append(image_path)
+            test_masks.append(mask_path)
+
+    return test_images, test_masks
+
+
 if __name__ == '__main__':
     evaluator = Evaluator(opt)
 
-    #test_images = glob.glob(os.path.join(opt.test_folder_path, '*'))
-    #test_images = [f for f in test_images if ('png' in f or 'jpg' in f) and (not 'mask' in f)]
-    
-    # modify: multi-view setting #
-    test_images = [opt.test_folder_path+'/0_0_00.jpg', opt.test_folder_path+'/90_0_00.jpg', opt.test_folder_path+'/180_0_00.jpg', opt.test_folder_path+'/270_0_00.jpg']
-    test_masks = [opt.test_folder_path+'/0_0_00_mask.png', opt.test_folder_path+'/90_0_00_mask.png', opt.test_folder_path+'/180_0_00_mask.png', opt.test_folder_path+'/270_0_00_mask.png']
-    #--------------------------#
+    test_images, test_masks = _collect_test_pairs(opt.test_folder_path)
+    if opt.num_views > 0:
+        test_images = test_images[:opt.num_views]
+        test_masks = test_masks[:opt.num_views]
 
-    #test_images = [opt.test_folder_path+'/0_0_00.jpg']
-    #test_masks = [opt.test_folder_path+'/0_0_00.png']
     print("Use view:", opt.num_views)
+    print("Found %d valid image/mask pairs" % len(test_images))
 
-    #for image_path, mask_path in tqdm.tqdm(zip(test_images, test_masks)):
+    if len(test_images) != opt.num_views:
+        raise RuntimeError(
+            'Expected %d image/mask pairs in %s but found %d. Ensure each image has a matching mask.' %
+            (opt.num_views, opt.test_folder_path, len(test_images))
+        )
+
     try:
         data = evaluator.load_image(test_images, test_masks)
         evaluator.eval(data, True)
