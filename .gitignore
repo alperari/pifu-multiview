@@ -130,3 +130,6 @@ dmypy.json
 # Data
 sample_images/
 results/
+
+rembg/input/
+rembg/output/

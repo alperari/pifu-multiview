@@ -4,7 +4,7 @@ set -ex
 # Training
 GPU_ID=0
 DISPLAY_ID=$((GPU_ID*10+10))
-NAME='pifu_demo_2/rp_Man'
+NAME='pifu_demo_3/mpi'
 
 # Network configuration
 
@@ -19,7 +19,7 @@ VOL_RES=256
 CHECKPOINTS_NETG_PATH='./checkpoints/example/netG_epoch_1'
 CHECKPOINTS_NETC_PATH='./checkpoints/example/netC_epoch_2'
 
-TEST_FOLDER_PATH='./sample_images/rp_Man'
+TEST_FOLDER_PATH='./sample_images/mpi'
 
 # command
 CUDA_VISIBLE_DEVICES=${GPU_ID} python ./apps/eval.py \
@@ -36,4 +36,4 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python ./apps/eval.py \
     --test_folder_path ${TEST_FOLDER_PATH} \
     --load_netG_checkpoint_path ${CHECKPOINTS_NETG_PATH} \
     --load_netC_checkpoint_path ${CHECKPOINTS_NETC_PATH} \
-    --num_views 4
+    --num_views 2
